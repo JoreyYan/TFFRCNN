@@ -44,8 +44,9 @@ def layer(op):
 
 class Network(object):
     def __init__(self, inputs, trainable=True):
-        self.inputs = []
-        self.layers = dict(inputs)
+        self.inputs = [] #当初始化这个network类的时候，就是会有初始化的inputs，而这个inputs会在初始化之后赋值，那么他的维度取决于数据
+        #想要调用这个network，最少也要输入一个inputs
+        self.layers = dict(inputs)#将inputs转化为字典
         self.trainable = trainable
         self.setup()
 
@@ -53,7 +54,7 @@ class Network(object):
         raise NotImplementedError('Must be subclassed.')
 
     def load(self, data_path, session, ignore_missing=False):
-        data_dict = np.load(data_path).item()
+        data_dict = np.load(data_path).item()#目录下所有文件生成一个dict
         for key in data_dict:
             with tf.variable_scope(key, reuse=True):
                 for subkey in data_dict[key]:
@@ -93,10 +94,10 @@ class Network(object):
         id = sum(t.startswith(prefix) for t,_ in self.layers.items())+1
         return '%s_%d'%(prefix, id)
 
-    def make_var(self, name, shape, initializer=None, trainable=True, regularizer=None):
+    def make_var(self, name, shape, initializer=None, trainable=True, regularizer=None):#这是生成变量的语句，也就是生成weight的语句
         return tf.get_variable(name, shape, initializer=initializer, trainable=trainable, regularizer=regularizer)
 
-    def validate_padding(self, padding):
+    def validate_padding(self, padding):#padding就两种选择
         assert padding in ('SAME', 'VALID')
 
     """
@@ -129,21 +130,25 @@ class Network(object):
             """
 
     @layer
-    def conv(self, input, k_h, k_w, c_o, s_h, s_w, name, biased=True,relu=True, padding=DEFAULT_PADDING, trainable=True):
+    #def conv(self, input, k_h, k_w, c_o, s_h, s_w, name, biased=True,relu=True, padding=DEFAULT_PADDING, trainable=True):
+    # s_d, s_h, s_w是下面要用到的 所以要增加一个 k_d同理
+    def conv(self, input, k_d, k_h, k_w, c_o, s_d, s_h, s_w, name, biased=True,relu=True, padding=DEFAULT_PADDING, trainable=True):
         """ contribution by miraclebiu, and biased option"""
         self.validate_padding(padding)
-        c_i = input.get_shape()[-1]
-        convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)
+        c_i = input.get_shape()[-1]#channel为输入的最后一维
+        #convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)#i，k分别时inputs和kernel的size
+        convolve = lambda i, k: tf.nn.conv3d(i, k, [1, s_d,s_h, s_w, 1], padding=padding)#i，k分别时inputs和kernel的size
         with tf.variable_scope(name) as scope:
 
             # init_weights = tf.truncated_normal_initializer(0.0, stddev=0.001)
-            init_weights = tf.contrib.layers.variance_scaling_initializer(factor=0.01, mode='FAN_AVG', uniform=False)
-            init_biases = tf.constant_initializer(0.0)
-            kernel = self.make_var('weights', [k_h, k_w, c_i, c_o], init_weights, trainable, \
+            init_weights = tf.contrib.layers.variance_scaling_initializer(factor=0.01, mode='FAN_AVG', uniform=False)#初始化权重
+            init_biases = tf.constant_initializer(0.0)#初始化偏置
+            #kernel = self.make_var('weights', [k_d,k_h, k_w, c_i, c_o], init_weights, trainable, \
+            kernel = self.make_var('weights', [k_d,k_h, k_w, c_i, c_o], init_weights, trainable, \#生成权重，所以要多加一维
                                    regularizer=self.l2_regularizer(cfg.TRAIN.WEIGHT_DECAY))
-            if biased:
-                biases = self.make_var('biases', [c_o], init_biases, trainable)
-                conv = convolve(input, kernel)
+            if biased:#根据有无biased进行计算
+                biases = self.make_var('biases', [c_o], init_biases, trainable)#根据输出维度设定size
+                conv = convolve(input, kernel)#将输入与kernel卷积计算
                 if relu:
                     bias = tf.nn.bias_add(conv, biases)
                     return tf.nn.relu(bias)
@@ -201,20 +206,21 @@ class Network(object):
         return tf.nn.relu(input, name=name)
 
     @layer
-    def max_pool(self, input, k_h, k_w, s_h, s_w, name, padding=DEFAULT_PADDING):
+    # def max_pool(self, input, k_h, k_w, s_h, s_w, name, padding=DEFAULT_PADDING)
+    def max_pool(self, input, k_d, k_h, k_w, s_d, s_h, s_w, name, padding=DEFAULT_PADDING):#kernel size与strides要+1
         self.validate_padding(padding)
         return tf.nn.max_pool(input,
-                              ksize=[1, k_h, k_w, 1],
-                              strides=[1, s_h, s_w, 1],
+                              ksize=[1, k_d, k_h, k_w, 1],
+                              strides=[1, s_d, s_h, s_w, 1],
                               padding=padding,
                               name=name)
 
     @layer
-    def avg_pool(self, input, k_h, k_w, s_h, s_w, name, padding=DEFAULT_PADDING):
+    def avg_pool(self, input, k_d, k_h, k_w, s_d, s_h, s_w, name, padding=DEFAULT_PADDING):#size修改
         self.validate_padding(padding)
         return tf.nn.avg_pool(input,
-                              ksize=[1, k_h, k_w, 1],
-                              strides=[1, s_h, s_w, 1],
+                              ksize=[1, k_d, k_h, k_w, 1],
+                              strides=[1, s_d, s_h, s_w, 1],
                               padding=padding,
                               name=name)
 
